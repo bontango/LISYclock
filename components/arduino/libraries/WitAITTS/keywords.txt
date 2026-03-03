@@ -1,0 +1,47 @@
+#######################################
+# Syntax Coloring Map for WitAITTS
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+WitAITTS	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+speak	KEYWORD2
+stop	KEYWORD2
+loop	KEYWORD2
+isPlaying	KEYWORD2
+isBusy	KEYWORD2
+setVoice	KEYWORD2
+setStyle	KEYWORD2
+setSpeed	KEYWORD2
+setPitch	KEYWORD2
+setSFXCharacter	KEYWORD2
+setSFXEnvironment	KEYWORD2
+setGain	KEYWORD2
+setAudioFormat	KEYWORD2
+setDebugLevel	KEYWORD2
+setPins	KEYWORD2
+printConfig	KEYWORD2
+getConfig	KEYWORD2
+setErrorCallback	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+DEBUG_OFF	LITERAL1
+DEBUG_ERROR	LITERAL1
+DEBUG_INFO	LITERAL1
+DEBUG_VERBOSE	LITERAL1
+WITAI_BUFFER_SIZE	LITERAL1
+WITAI_MAX_TEXT_LENGTH	LITERAL1
+WITAI_DEFAULT_BCLK	LITERAL1
+WITAI_DEFAULT_LRC	LITERAL1
+WITAI_DEFAULT_DIN	LITERAL1

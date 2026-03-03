@@ -1,0 +1,60 @@
+{
+  "name": "WitAITTS",
+  "version": "1.0.2",
+  "description": "Wit.ai Text-to-Speech library for ESP32 and Raspberry Pi Pico W with audio streaming",
+  "keywords": "tts, text-to-speech, wit.ai, esp32, esp32-c3, esp32-s3, pico, pico-w, rp2040, audio, streaming, i2s",
+  "authors": [
+    {
+      "name": "Jobit Joseph",
+      "email": "jobitjoseph1@gmail.com",
+      "url": "https://github.com/jobitjoseph",
+      "maintainer": true
+    },
+    {
+      "name": "Circuit Digest",
+      "url": "https://circuitdigest.com"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jobitjoseph/WitAITTS.git"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/jobitjoseph/WitAITTS",
+  "dependencies": [
+    {
+      "name": "BackgroundAudio",
+      "authors": "earlephilhower",
+      "frameworks": "arduino",
+      "platforms": "espressif32"
+    },
+    {
+      "name": "ESP32-audioI2S-master",
+      "authors": "schreibfaul1",
+      "frameworks": "arduino",
+      "platforms": "espressif32"
+    },
+    {
+      "name": "arduino-audio-tools",
+      "version": "https://github.com/pschatzmann/arduino-audio-tools.git",
+      "platforms": "raspberrypi"
+    },
+    {
+      "name": "arduino-libhelix",
+      "version": "https://github.com/pschatzmann/arduino-libhelix.git",
+      "platforms": "raspberrypi"
+    }
+  ],
+  "frameworks": "arduino",
+  "platforms": ["espressif32", "raspberrypi"],
+  "export": {
+    "include": [
+      "src",
+      "examples",
+      "*.md",
+      "*.txt",
+      "library.json",
+      "library.properties"
+    ]
+  }
+}

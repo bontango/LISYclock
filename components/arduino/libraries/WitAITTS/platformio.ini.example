@@ -1,0 +1,85 @@
+;
+; WitAITTS PlatformIO Example Configuration
+;
+; Copy the relevant section to your project's platformio.ini
+;
+
+; ============================================
+; ESP32 Configuration
+; ============================================
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+monitor_speed = 115200
+
+lib_deps = 
+    jobitjoseph/WitAITTS@^1.0.0
+    earlephilhower/BackgroundAudio    
+    schreibfaul1/ESP32-audioI2S-master
+
+build_flags = 
+    -DCORE_DEBUG_LEVEL=3
+
+; ============================================
+; ESP32-C3 Configuration
+; ============================================
+[env:esp32c3]
+platform = espressif32
+board = esp32-c3-devkitm-1
+framework = arduino
+monitor_speed = 115200
+
+lib_deps = 
+    jobitjoseph/WitAITTS@^1.0.0
+    earlephilhower/BackgroundAudio
+    schreibfaul1/ESP32-audioI2S-master
+
+build_flags = 
+    -DARDUINO_USB_CDC_ON_BOOT=1
+
+; ============================================
+; ESP32-S3 Configuration
+; ============================================
+[env:esp32s3]
+platform = espressif32
+board = esp32-s3-devkitc-1
+framework = arduino
+monitor_speed = 115200
+
+lib_deps = 
+    jobitjoseph/WitAITTS@^1.0.0
+    earlephilhower/BackgroundAudio
+    schreibfaul1/ESP32-audioI2S-master
+
+build_flags = 
+    -DARDUINO_USB_CDC_ON_BOOT=1
+    -DARDUINO_USB_MODE=1
+
+; ============================================
+; Raspberry Pi Pico W Configuration
+; ============================================
+[env:rpipicow]
+platform = raspberrypi
+board = rpipicow
+framework = arduino
+monitor_speed = 115200
+
+lib_deps = 
+    jobitjoseph/WitAITTS@^1.0.0
+    https://github.com/pschatzmann/arduino-audio-tools.git
+    https://github.com/pschatzmann/arduino-libhelix.git
+
+; ============================================
+; Raspberry Pi Pico 2 W Configuration
+; ============================================
+[env:rpipico2w]
+platform = raspberrypi
+board = rpipico2w
+framework = arduino
+monitor_speed = 115200
+
+lib_deps = 
+    jobitjoseph/WitAITTS@^1.0.0
+    https://github.com/pschatzmann/arduino-audio-tools.git
+    https://github.com/pschatzmann/arduino-libhelix.git

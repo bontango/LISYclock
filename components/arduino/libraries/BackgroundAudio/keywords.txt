@@ -1,0 +1,33 @@
+#######################################
+# Syntax Coloring Map
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+BackgroundAudioAAC	KEYWORD1
+BackgroundAudioMP3	KEYWORD1
+BackgroundAudioWAV	KEYWORD1
+BackgroundAudioAACClass	KEYWORD1
+BackgroundAudioMP3Class	KEYWORD1
+BackgroundAudioWAVClass	KEYWORD1
+RawDataBuffer	KEYWORD1
+ROMBackgroundAudioAAC	KEYWORD1
+ROMBackgroundAudioMP3	KEYWORD1
+ROMBackgroundAudioWAV	KEYWORD1
+ESP32I2SAudio	KEYWORD1
+ESP32PWMAudio	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+end	KEYWORD2
+write	KEYWORD2
+done	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
