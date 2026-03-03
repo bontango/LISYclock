@@ -1,0 +1,24 @@
+# ESP-IDF build output
+build/
+
+# Managed components (auto-downloaded, like node_modules)
+managed_components/
+
+# Old config backups
+sdkconfig.old
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Compiled artifacts
+*.o
+*.d
+*.a
+*.elf
+*.bin
+*.map
