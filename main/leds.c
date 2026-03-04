@@ -347,11 +347,11 @@ void attract_leds(void *pvParameter) {
 //init rand
 //srand(time(NULL));
 
-xTaskCreatePinnedToCore(&attract_leds_at1, "attract_leds_at1", 4096, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
-xTaskCreatePinnedToCore(&attract_leds_at2, "attract_leds_at2", 4096, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
-xTaskCreatePinnedToCore(&attract_leds_at3, "attract_leds_at3", 4096, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
-xTaskCreatePinnedToCore(&attract_leds_at4, "attract_leds_at3", 4096, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
-xTaskCreatePinnedToCore(&attract_leds_at5, "attract_leds_at3", 4096, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
+xTaskCreatePinnedToCore(&attract_leds_at1, "attract_leds_at1", 2048, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
+xTaskCreatePinnedToCore(&attract_leds_at2, "attract_leds_at2", 2048, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
+xTaskCreatePinnedToCore(&attract_leds_at3, "attract_leds_at3", 2048, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
+xTaskCreatePinnedToCore(&attract_leds_at4, "attract_leds_at3", 2048, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
+xTaskCreatePinnedToCore(&attract_leds_at5, "attract_leds_at3", 2048, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
 
 //100ms refresh rate for attract LEDs
 while(true) {

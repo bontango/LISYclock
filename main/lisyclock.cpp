@@ -24,6 +24,7 @@ extern "C"
 #include "typedefs.h"
 #include "ds3231.h"
 #include "gpiodefs.h"
+#include "httpserver.h"
 }
 
 
@@ -164,7 +165,7 @@ TM1637TinyDisplay6 display4(CLK4, DIO4); // 6-Digit Display Class
 
   display1.showString(" LISY ");
   display2.showString(" CLOCK");
-  display3.showString(VERSION);
+  display3.showString(LISYCLOCK_VERSION);
   display4.showString("boot");
   delay(3000);
 
@@ -253,13 +254,16 @@ else {
       display4.showString(" CONN ");
       
       while ( wifi_is_connected == 0) { };
-      str_ip = (char*)malloc(sizeof(char) * IP4ADDR_STRLEN_MAX);
+      
       str_ip = wifi_manager_get_sta_ip_string();
 
       //we have a network connection, start ftp server if requested and SD card mounted
       if ((ftp_server_enable != 0) & (sd_card_mounted != 0)) {
-        xTaskCreatePinnedToCore(&ftp_task, "FTP", 4096, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);  
+        xTaskCreatePinnedToCore(&ftp_task, "FTP", 4096, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);
       }
+
+      //start HTTP REST server for browser-based configuration
+      httpserver_start();
 
       //split the ip to four displays
       sprintf(my_ip_addr[0], "%-6s", strtok(str_ip, "."));
@@ -306,6 +310,7 @@ else { //no Wifi lets use real time clock
       if (ds3231_present == 0) {
       display1.showString("  NO  ");
       display2.showString(" RTC  ");
+      
       display3.showString("FOUND ");
       display4.showString("ERROR ");
 

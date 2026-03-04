@@ -1,13 +1,13 @@
 #ifndef GPIODEFS_H
 #define	GPIODEFS_H
 
-//#define LISYCLOCK2 TRUE
+#define LISYCLOCK2 TRUE
 
 
 
 //all 22 GPIO assigments for LISYclock HW 2.xx
 #ifdef LISYCLOCK2
-#define VERSION "v2.36 " 
+#define LISYCLOCK_VERSION "v2.37 " 
 // 8 Digital Pins for Displays (lisyclock.cpp)
 #define CLK1 15
 #define DIO1 16
@@ -41,7 +41,7 @@
 #define PIN_NUM_CS    1
 
 #else
-#define VERSION "v1.36 " 
+#define LISYCLOCK_VERSION "v1.37 " 
 //all 22 GPIO assigments for LISYclock HW 1.xx
 // 8 Digital Pins for Displays (lisyclock.cpp)
 #define CLK1 10
