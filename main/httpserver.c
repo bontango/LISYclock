@@ -18,6 +18,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "gpiodefs.h"
+#include "httpserver.h"
 
 static const char *TAG = "httpserver";
 
@@ -97,9 +98,10 @@ static esp_err_t options_handler(httpd_req_t *req)
 
 static esp_err_t status_get_handler(httpd_req_t *req)
 {
+    ESP_LOGI(TAG, "status request received");
     add_cors_headers(req);
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, "{\"status\":\"ok\",\"version\":\"" LISYCLOCK_VERSION "\"}");
+    httpd_resp_sendstr(req, "{\"status\":\"ok\",\"version\":\"" LISYCLOCK_VERSION "\",\"api_version\":" HTTP_API_VERSION_STR "}");
     return ESP_OK;
 }
 

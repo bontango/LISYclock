@@ -192,7 +192,8 @@ strcpy( weekday[4],"Thursd");
 strcpy( weekday[5],"Friday");
 strcpy( weekday[6],"Saturd");
 
-ftp_server_enable = 1;
+//default is ftp server disabled ( use config editor)
+ftp_server_enable = 0;
 strcpy( ftp_user, "lisy");
 strcpy( ftp_pass, "bontango");
 
@@ -260,7 +261,7 @@ int ReadConfig(char *fname) {
             else if (strcmp(key,"FTP_USER") == 0) {
                 trim_str( val, ftp_user, 40);
             }     
-            else if (strcmp(key,"FTP_PASS") == 0) {
+            else if (strcmp(key,"FTP_PWD") == 0) {
                 trim_str( val, ftp_pass, 40);
             }     
             else if (strcmp(key,"TIMEZONE") == 0) {

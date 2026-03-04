@@ -254,7 +254,11 @@ else {
       display4.showString(" CONN ");
       
       while ( wifi_is_connected == 0) { };
-      
+
+      // Disable modem sleep so the ESP32 responds immediately to the first
+      // incoming TCP SYN packet (avoids ~1-3 s delay on first HTTP connection).
+      esp_wifi_set_ps(WIFI_PS_NONE);
+
       str_ip = wifi_manager_get_sta_ip_string();
 
       //we have a network connection, start ftp server if requested and SD card mounted
