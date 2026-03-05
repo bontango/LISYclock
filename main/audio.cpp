@@ -24,6 +24,7 @@ extern "C"
 #include "driver/i2s_std.h"
 #include "driver/i2s.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "gpiodefs.h"
 }
 
@@ -245,7 +246,9 @@ void _playWitTTS_ESP32(char* text) {
   char payload[220];
   char auth[50];
 
-  ESP_LOGI(TAG, "Requesting TTS");
+  ESP_LOGI(TAG, "Requesting TTS — free heap: %lu, max block: %lu",
+           (unsigned long)esp_get_free_heap_size(),
+           (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT));
 
   _secureClient.stop();
   _secureClient.setInsecure();

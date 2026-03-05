@@ -119,7 +119,6 @@ void event_task(void *pvParameters) {
     time_match = false;
 
     ESP_LOGI(TAG, "event task started at %d:%d:%d",timeinfo.tm_hour,timeinfo.tm_min,timeinfo.tm_wday);
-    ESP_LOGI(TAG,"free heap size is %d",xPortGetFreeHeapSize());
 
     //search complete list for time match
     for( ; e != NULL ; e = e->next ) {        
