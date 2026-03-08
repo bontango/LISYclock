@@ -35,9 +35,10 @@ static const char *TAG = "httpserver";
 
 static void add_cors_headers(httpd_req_t *req)
 {
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin",  "*");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin",          "*");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods",         "GET, POST, PUT, DELETE, OPTIONS");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers",         "Content-Type");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Private-Network", "true");
 }
 
 // Decode a percent-encoded URL segment into dst (null-terminated).
@@ -303,10 +304,11 @@ static esp_err_t files_list_get_handler(httpd_req_t *req)
         snprintf(path, sizeof(path), "%s/%s", SDCARD_BASE, entry->d_name);
         struct stat st;
         long size = 0;
-        if (stat(path, &st) == 0) size = (long)st.st_size;
+        long mtime = 0;
+        if (stat(path, &st) == 0) { size = (long)st.st_size; mtime = (long)st.st_mtime; }
 
-        snprintf(chunk, sizeof(chunk), "%s{\"name\":\"%s\",\"size\":%ld}",
-                 first ? "" : ",", entry->d_name, size);
+        snprintf(chunk, sizeof(chunk), "%s{\"name\":\"%s\",\"size\":%ld,\"mtime\":%ld}",
+                 first ? "" : ",", entry->d_name, size, mtime);
         httpd_resp_send_chunk(req, chunk, -1);
         first = false;
     }
