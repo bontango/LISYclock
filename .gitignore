@@ -15,6 +15,9 @@ sdkconfig.old
 .DS_Store
 Thumbs.db
 
+# Sensitive config (never commit!)
+.env
+
 # Compiled artifacts
 *.o
 *.d
