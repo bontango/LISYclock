@@ -79,7 +79,8 @@ esp_err_t append_event(char *val, event_entry_t **lst, int event_type) {
     str_time_and_date = strtok(val, ",");
     ESP_LOGI(TAG, "time_and_date is %s",str_time_and_date);  
     str_text = strtok(NULL, ",");
-    ESP_LOGI(TAG, "text is %s",str_text);  
+    if (str_text == NULL) str_text = "";
+    ESP_LOGI(TAG, "text is %s",str_text);
 
     //split time/date to two strings time & date
     //<HH:MM-DD.MM.YYYY>|<HH:MM:W>
@@ -143,7 +144,7 @@ esp_err_t append_event(char *val, event_entry_t **lst, int event_type) {
     }
 
     new_entry = malloc(sizeof(*new_entry)); // create new entry
-    new_entry->text = strdup(str_text);
+    new_entry->text = strdup(str_text ? str_text : "");
     new_entry->tm_min = minute;
     new_entry->tm_hour = hour;
     new_entry->tm_mday = day;
@@ -411,10 +412,16 @@ int ReadConfig(char *fname) {
                 ESP_LOGI( TAG, "EVENT_ATTRACT_LEDS: %s",val);
                 if ( append_event(val, &Event_list, EVENT_TYPE_ATTRACT_LEDS) != ESP_OK ) { err_line = line; ESP_LOGW(TAG, "problem with append EVENT_ATTRACT_LEDS"); }
             }
-            else if (strcmp(key,"EVENT_TIME") == 0) {      
-                trim_str( val, val, 80);          
-                ESP_LOGI( TAG, "EVENT_TIME: %s",val);
-                if ( append_event(val, &Event_list, EVENT_TYPE_TIME) != ESP_OK ) { err_line = line; ESP_LOGW(TAG, "problem with append EVENT_TIME"); }
+            else if (strcmp(key,"EVENT_SYNC_TIME") == 0) {
+                trim_str( val, val, 80);
+                ESP_LOGI( TAG, "EVENT_SYNC_TIME: %s",val);
+                if ( append_event(val, &Event_list, EVENT_TYPE_SYNC_TIME) != ESP_OK ) { err_line = line; ESP_LOGW(TAG, "problem with append EVENT_SYNC_TIME"); }
+            }
+            else if (strcmp(key,"EVENT_SAY_TIME") == 0) {
+                trim_str(val, val, 80);
+                ESP_LOGI(TAG, "EVENT_SAY_TIME: %s", val);
+                if (append_event(val, &Event_list, EVENT_TYPE_SAY_TIME) != ESP_OK)
+                    ESP_LOGE(TAG, "append_event failed");
             }
             else {
                 ESP_LOGW(TAG, "unknown key, cfg line: key:%s< val:%s<",key,val);  

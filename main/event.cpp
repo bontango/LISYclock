@@ -149,9 +149,32 @@ void event_task(void *pvParameters) {
                         if (strcmp(e->text,"off") == 0) attract_leds_enabled = false;
                         else attract_leds_enabled = true;
                         break;
-                    case EVENT_TYPE_TIME:                        
+                    case EVENT_TYPE_SYNC_TIME:
                         obtain_time(atoi(e->text));
                         break;
+                    case EVENT_TYPE_SAY_TIME: {
+                        time_t now; time(&now);
+                        struct tm ti; localtime_r(&now, &ti);
+                        char tts_buf[80];
+                        if (strcmp(e->text, "german") == 0) {
+                            if (ti.tm_min == 0)
+                                snprintf(tts_buf, sizeof(tts_buf), "Es ist %d Uhr", ti.tm_hour);
+                            else
+                                snprintf(tts_buf, sizeof(tts_buf), "Es ist %d Uhr und %d Minuten", ti.tm_hour, ti.tm_min);
+                        } else if (strcmp(e->text, "italian") == 0) {
+                            if (ti.tm_min == 0)
+                                snprintf(tts_buf, sizeof(tts_buf), "Sono le %d in punto", ti.tm_hour);
+                            else
+                                snprintf(tts_buf, sizeof(tts_buf), "Sono le %d e %d minuti", ti.tm_hour, ti.tm_min);
+                        } else { // english (default)
+                            if (ti.tm_min == 0)
+                                snprintf(tts_buf, sizeof(tts_buf), "It is %d o'clock", ti.tm_hour);
+                            else
+                                snprintf(tts_buf, sizeof(tts_buf), "It is %d hours and %d minutes", ti.tm_hour, ti.tm_min);
+                        }
+                        audio_play_tts(tts_buf);
+                        break;
+                    }
                     default: ESP_LOGW(TAG, "unknown event type");
                 }
         //reset TTS parameters

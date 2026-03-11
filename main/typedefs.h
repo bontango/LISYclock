@@ -9,7 +9,8 @@
 #define EVENT_TYPE_DISPLAYS 4
 #define EVENT_TYPE_GI_LEDS 5
 #define EVENT_TYPE_ATTRACT_LEDS 6
-#define EVENT_TYPE_TIME 7
+#define EVENT_TYPE_SYNC_TIME 7
+#define EVENT_TYPE_SAY_TIME 8
 
 // GI LED cfg
 typedef struct {
