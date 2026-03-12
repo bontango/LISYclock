@@ -88,4 +88,4 @@ Der Config Editor befindet sich in `../config_editor/` (relativ zu diesem Verzei
 - Wenn du einen Endpunkt in `main/httpserver.c` änderst oder hinzufügst, muss `../API.md` aktualisiert werden.
 - Bei **Breaking Changes** (geänderte Response-Felder, entfernte Endpunkte): `HTTP_API_VERSION` in `main/httpserver.h` erhöhen **und** `api_version` in `../API.md` erhöhen.
 - Nicht-breaking Additions (neue optionale Felder, neue Endpunkte) erfordern keine Versionserhöhung.
-- Nach API-Änderungen muss der Config Editor (`../config_editor/index.html`) angepasst werden.
+- Nach API-Änderungen muss der Config Editor (`../config_editor/LISYclock_config_editor.html`) angepasst werden.
