@@ -20,11 +20,12 @@ extern "C"
 #include "led_strip.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
-#include "wifi_manager.h"
+#include "esp_event.h"
 #include "typedefs.h"
 #include "ds3231.h"
 #include "gpiodefs.h"
 #include "httpserver.h"
+#include "usb_com.h"
 }
 
 
@@ -63,8 +64,7 @@ extern "C" esp_err_t MountSDCard(void);
 extern "C" esp_err_t CheckFWUpdate(char *fname);
 extern "C" void doFWUpdate(char *fname);
 
-extern "C" void cb_connection_ok(void *pvParameter);
-int wifi_is_connected = 0;
+uint8_t wifi_is_connected = 0;
 
 extern "C" esp_err_t button_init(void);
 uint8_t play_it = 0;
@@ -75,6 +75,11 @@ uint8_t set_time = 0;
 uint8_t wifi_enabled;
 uint8_t attract_enabled;
 uint8_t sound_disabled;
+
+//wifi config (from config.txt, managed via USB)
+uint8_t wifi_cfg_enabled = 1;
+char wifi_cfg_ssid[65] = {0};
+char wifi_cfg_pwd[65] = {0};
 
 //config section, default enable, on off via events
 bool display_enabled = true;
@@ -119,11 +124,14 @@ char set_time_display2[7];
 char set_time_display3[7];
 char set_time_display4[7];
   
+i2c_dev_t rtc_dev;
+uint8_t   ds3231_present = 0;
+
 extern "C" void app_main()
 {
-
+  esp_log_level_set("*", ESP_LOG_NONE);  // Suppress boot logs (CH340 reset protection)
   initArduino();
-  
+
   int i;
   char fpath0[30];
   char str_display1[32];
@@ -138,11 +146,11 @@ extern "C" void app_main()
   char delimeter = '-';
   char *str_ip;
   uint8_t sd_card_mounted = 0;
-	i2c_dev_t dev;
-  uint8_t ds3231_present = 0;
   int cfg_err_line;
+  esp_netif_ip_info_t ip_info;
   
   //init system
+  usb_com_init();
   InitConfig();
   button_init();
   audio_init();
@@ -230,7 +238,7 @@ else {
   
   //check if a ds3231 modul is inserted
   // Initialize RTC
-	if (ds3231_init_desc(&dev, I2C_NUM_0, gpio_num_t(I2C_SDA), gpio_num_t(I2C_SCL)) != ESP_OK) {
+	if (ds3231_init_desc(&rtc_dev, I2C_NUM_0, gpio_num_t(I2C_SDA), gpio_num_t(I2C_SCL)) != ESP_OK) {
 		ESP_LOGW(TAG, "No RTC ds3231 device found");
     ds3231_present = 0;
 	}
@@ -239,29 +247,54 @@ else {
     ds3231_present = 1;
   }
   
-  if (wifi_enabled) { //if not disabled via DIP switch
-      /* start the wifi manager */
-      wifi_manager_start();
-      // register a callback, called when connection to WiFi is established 
-      // we do start time setting via ntp here
-      wifi_manager_set_callback(WM_EVENT_STA_GOT_IP, &cb_connection_ok);
-      //start AP to reset credentials ??
-      //	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-
+  //should we try to connect to WiFi?
+  if (wifi_enabled && wifi_cfg_enabled && strlen(wifi_cfg_ssid) > 0) {
       display1.showString(" WAIT ");
       display2.showString(" FOR  ");
       display3.showString(" WIFI ");
       display4.showString(" CONN ");
-      
-      while ( wifi_is_connected == 0) { };
+
+      // Native ESP-IDF WiFi STA connection
+      ESP_ERROR_CHECK(esp_netif_init());
+      ESP_ERROR_CHECK(esp_event_loop_create_default());
+      esp_netif_create_default_wifi_sta();
+
+      wifi_init_config_t wifi_cfg = WIFI_INIT_CONFIG_DEFAULT();
+      ESP_ERROR_CHECK(esp_wifi_init(&wifi_cfg));
+
+      wifi_config_t wifi_config = {};
+      strncpy((char *)wifi_config.sta.ssid, wifi_cfg_ssid, sizeof(wifi_config.sta.ssid) - 1);
+      strncpy((char *)wifi_config.sta.password, wifi_cfg_pwd, sizeof(wifi_config.sta.password) - 1);
+
+      ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+      ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+      ESP_ERROR_CHECK(esp_wifi_start());
+      ESP_ERROR_CHECK(esp_wifi_connect());
+
+      // Wait for IP with timeout (~15s)
+      int wifi_retries = 0;      
+      esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+      while (wifi_retries < 30) {
+          vTaskDelay(pdMS_TO_TICKS(500));
+          if (sta_netif && esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
+              wifi_is_connected = 1;
+              break;
+          }
+          wifi_retries++;
+      }
+    }
+
+    if (wifi_is_connected) { //we have a network connection,
 
       // Disable modem sleep so the ESP32 responds immediately to the first
       // incoming TCP SYN packet (avoids ~1-3 s delay on first HTTP connection).
       esp_wifi_set_ps(WIFI_PS_NONE);
 
-      str_ip = wifi_manager_get_sta_ip_string();
+      static char ip_str_buf[16];
+      esp_ip4addr_ntoa(&ip_info.ip, ip_str_buf, sizeof(ip_str_buf));
+      str_ip = ip_str_buf;
 
-      //we have a network connection, start ftp server if requested and SD card mounted
+      // start ftp server if requested and SD card mounted
       if ((ftp_server_enable != 0) & (sd_card_mounted != 0)) {
         xTaskCreatePinnedToCore(&ftp_task, "FTP", 4096, NULL, (tskIDLE_PRIORITY + 3), NULL, 1);
       }
@@ -289,10 +322,10 @@ else {
       localtime_r(&now, &rtcinfo);
       rtcinfo.tm_year = rtcinfo.tm_year + 1900;
       if (ds3231_present) {
-          if (ds3231_get_temp_float(&dev, &temp) != ESP_OK) {
+          if (ds3231_get_temp_float(&rtc_dev, &temp) != ESP_OK) {
             ESP_LOGE(pcTaskGetName(0), "Could not get temperature.");
           }
-          if (ds3231_set_time(&dev, &rtcinfo) != ESP_OK) {
+          if (ds3231_set_time(&rtc_dev, &rtcinfo) != ESP_OK) {
             ESP_LOGE(TAG, "Could not set ntp time to RTC.");
           }
           else {
@@ -301,10 +334,9 @@ else {
             rtcinfo.tm_mday, rtcinfo.tm_hour, rtcinfo.tm_min, rtcinfo.tm_sec, temp);            
           }
       }
-}
-else { //no Wifi lets use real time clock
-      
-
+  }
+  else { //No network connection
+      ESP_LOGW(TAG, "No WiFi, connection failed after timeout or not configured");
       display1.showString("  NO  ");
       display2.showString(" WIFI ");
       display3.showString("WE TRY");
@@ -322,7 +354,7 @@ else { //no Wifi lets use real time clock
       while (1) { vTaskDelay(1); }
       }
 
-  if (ds3231_get_time(&dev, &rtcinfo) != ESP_OK) {
+  if (ds3231_get_time(&rtc_dev, &rtcinfo) != ESP_OK) {
       ESP_LOGE(TAG, "Could not get time.");
       while (1) { vTaskDelay(1); }
     }
@@ -330,26 +362,28 @@ else { //no Wifi lets use real time clock
   //fresh booted ds3231 ? -> set year to 2025
   if ( rtcinfo.tm_year == 2000) {
     rtcinfo.tm_year = 2025;
-  if (ds3231_set_time(&dev, &rtcinfo) != ESP_OK) {
+  if (ds3231_set_time(&rtc_dev, &rtcinfo) != ESP_OK) {
 		ESP_LOGE(pcTaskGetName(0), "Could not set time.");
 		while (1) { vTaskDelay(1); }
 	 }
   }
 } //no Wifi, use RTC
 
-//about to start loop, say that we are ready and play welcome.mp3 if exist
+//about to start loop, say that we are ready
+//play welcome.mp3 if exist
 audio_play_mp3("welcome.mp3");
+//TTS works only if we have a WiFi conn, will be checked via wifi_is_connected in audio_play_tts
 audio_play_tts("LISYclock ready");
 
 //endless loop to show time
 while(true)  {    
     //store current time to 'timeinfo', different sources available
-    if (wifi_enabled) {
+    if (wifi_is_connected) {
       time(&now);
       localtime_r(&now, &timeinfo);
     }
     else { //get time from RTC if no wifi
-      if (ds3231_get_time(&dev, &rtcinfo) != ESP_OK) {
+      if (ds3231_get_time(&rtc_dev, &rtcinfo) != ESP_OK) {
         ESP_LOGI(TAG, "Could not get time.");
         }
       rtcinfo.tm_year=rtcinfo.tm_year-1900;
@@ -407,4 +441,10 @@ while(true)  {
      }
         */
   }
+}
+
+extern "C" void lisyclock_set_rtc_time(struct tm *t) {
+    if (ds3231_present) {
+        ds3231_set_time(&rtc_dev, t);
+    }
 }

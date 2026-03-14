@@ -41,6 +41,10 @@ extern char d_voice[21],d_style[21],d_sfxCharacter[21],d_sfxEnvironment[21];
 extern int d_speed, d_pitch;
 extern float d_gain;
 
+extern uint8_t wifi_cfg_enabled;
+extern char wifi_cfg_ssid[65];
+extern char wifi_cfg_pwd[65];
+
 extern bool display_enabled;
 extern bool gi_leds_enabled;
 extern bool attract_leds_enabled;
@@ -372,6 +376,15 @@ int ReadConfig(char *fname) {
                     cfg_led_at5[AT5_LED_nu].num = 0; //mark end of list
                 }
                 else ESP_LOGW(TAG, "AT5_LED: wrong number of arguments: %d",ret);          
+            }
+            else if (strcmp(key,"WIFI_ENABLE") == 0) {
+                wifi_cfg_enabled = (val[0] == 'y') ? 1 : 0;
+            }
+            else if (strcmp(key,"WIFI_SSID") == 0) {
+                trim_str( val, wifi_cfg_ssid, 64);
+            }
+            else if (strcmp(key,"WIFI_PWD") == 0) {
+                trim_str( val, wifi_cfg_pwd, 64);
             }
             else if (strcmp(key,"TTS_WIT_TOKEN") == 0) { trim_str( val, _witToken, 40); }
             else if (strcmp(key,"TTS_Voice") == 0) { trim_str( val, d_voice, 20); }

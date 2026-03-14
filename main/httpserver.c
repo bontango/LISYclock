@@ -448,8 +448,8 @@ esp_err_t httpserver_start(void)
     config.uri_match_fn  = httpd_uri_match_wildcard;
     config.stack_size    = 6144;
     config.max_uri_handlers = 13;
-    config.server_port   = 8080;  // port 80 is taken by wifi_manager captive portal
-    config.ctrl_port     = 32769; // default 32768 is taken by wifi_manager's httpd instance
+    config.server_port   = 8080;  // kept at 8080 for API compatibility (port 80 now free)
+    config.ctrl_port     = 32769; // kept for compatibility
 
     httpd_handle_t server = NULL;
     esp_err_t ret = httpd_start(&server, &config);

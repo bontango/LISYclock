@@ -32,8 +32,8 @@ extern float _gain;
 
 extern bool display_enabled;
 extern bool attract_leds_enabled;
+extern "C" uint8_t wifi_is_connected;
 extern "C" void gi_leds(bool activate);
-
 extern "C" void obtain_time(int retries);
 
 //sync event task
@@ -150,7 +150,9 @@ void event_task(void *pvParameters) {
                         else attract_leds_enabled = true;
                         break;
                     case EVENT_TYPE_SYNC_TIME:
-                        obtain_time(atoi(e->text));
+                        if (wifi_is_connected) { //only if we have a network connection,
+                            obtain_time(atoi(e->text));
+                        }
                         break;
                     case EVENT_TYPE_SAY_TIME: {
                         time_t now; time(&now);

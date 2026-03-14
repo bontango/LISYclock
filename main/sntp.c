@@ -52,17 +52,5 @@ void obtain_time(int retries) {
 
 }
 
-/**
- * @brief this is an exemple of a callback that you can setup in your own app to get notified of wifi manager event.
- */
-void cb_connection_ok(void *pvParameter){
-	ip_event_got_ip_t* param = (ip_event_got_ip_t*)pvParameter;
-
-	/* transform IP to human readable string */
-	char str_ip[16];
-	esp_ip4addr_ntoa(&param->ip_info.ip, str_ip, IP4ADDR_STRLEN_MAX);
-    wifi_is_connected = 1; //signal to main 
-	ESP_LOGI(TAG, "I have a connection and my IP is %s!", str_ip);
-
-    //obtain_time();
-}
+// Note: wifi_manager callback removed — WiFi connection is now handled
+// directly in lisyclock.cpp using native ESP-IDF WiFi API.

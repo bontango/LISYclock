@@ -28,6 +28,8 @@ extern "C"
 #include "gpiodefs.h"
 }
 
+extern uint8_t wifi_is_connected;
+
 static const char *TAG = "audio";
 #define AUDIO_BUFFER 4096    // Size of audio buffer (samples)
 ESP32I2SAudio audio(I2S_BLK_PIN, I2S_WS_PIN, I2S_DATA_OUT_PIN);
@@ -132,10 +134,11 @@ while(1) {
 }
 
 void audio_play_tts(char* text) {
-    ESP_LOGI(TAG, "Semaphore give");
-    strncpy(text2speak, text, 80);    
-    xSemaphoreGive(textReadySemaphore);
-
+    if (wifi_is_connected) { //only if we have a network connection,
+      ESP_LOGI(TAG, "Semaphore give");
+      strncpy(text2speak, text, 80);    
+      xSemaphoreGive(textReadySemaphore);
+    }
 }
 
 void set_tts_defaults(void) {
