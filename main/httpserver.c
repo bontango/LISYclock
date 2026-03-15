@@ -17,11 +17,15 @@
 #include <errno.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <time.h>
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "gpiodefs.h"
 #include "httpserver.h"
+
+extern void lisyclock_set_rtc_time(struct tm *t);
 
 static const char *TAG = "httpserver";
 
@@ -439,6 +443,97 @@ static esp_err_t rename_post_handler(httpd_req_t *req)
 }
 
 // ---------------------------------------------------------------------------
+// POST /time  — set system + RTC time from JSON {"unix_timestamp": 1234567890}
+// ---------------------------------------------------------------------------
+
+static esp_err_t time_post_handler(httpd_req_t *req)
+{
+    add_cors_headers(req);
+
+    char buf[64];
+    int to_recv = (req->content_len > 0 && req->content_len < (int)sizeof(buf) - 1)
+                  ? (int)req->content_len : (int)(sizeof(buf) - 1);
+    int len = httpd_req_recv(req, buf, to_recv);
+    if (len <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
+        return ESP_OK;
+    }
+    buf[len] = '\0';
+
+    // Parse unix_timestamp from JSON
+    const char *key = "\"unix_timestamp\"";
+    const char *p = strstr(buf, key);
+    if (!p) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing unix_timestamp");
+        return ESP_OK;
+    }
+    p += strlen(key);
+    while (*p == ' ' || *p == ':') p++;
+    time_t ts = (time_t)atoll(p);
+    if (ts <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid unix_timestamp");
+        return ESP_OK;
+    }
+
+    struct timeval tv = { .tv_sec = ts, .tv_usec = 0 };
+    settimeofday(&tv, NULL);
+    struct tm tm_info;
+    localtime_r(&ts, &tm_info);
+    tm_info.tm_year += 1900;
+    lisyclock_set_rtc_time(&tm_info);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+    return ESP_OK;
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /files/<filename>  — delete a file from SD card
+// ---------------------------------------------------------------------------
+
+static esp_err_t files_delete_handler(httpd_req_t *req)
+{
+    add_cors_headers(req);
+
+    const char *prefix = "/files/";
+    const char *uri = req->uri;
+    if (strncmp(uri, prefix, strlen(prefix)) != 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid path");
+        return ESP_OK;
+    }
+    const char *raw_name = uri + strlen(prefix);
+
+    char name[64];
+    url_decode(raw_name, name, sizeof(name));
+
+    if (name[0] == '\0') {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty filename");
+        return ESP_OK;
+    }
+    if (strchr(name, '/') || strstr(name, "..")) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid filename");
+        return ESP_OK;
+    }
+
+    char path[96];
+    snprintf(path, sizeof(path), "%s/%s", SDCARD_BASE, name);
+
+    if (remove(path) != 0) {
+        if (errno == ENOENT) {
+            httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+        } else {
+            ESP_LOGE(TAG, "delete %s failed, errno=%d", path, errno);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Delete failed");
+        }
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+    return ESP_OK;
+}
+
+// ---------------------------------------------------------------------------
 // httpserver_start
 // ---------------------------------------------------------------------------
 
@@ -447,7 +542,7 @@ esp_err_t httpserver_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn  = httpd_uri_match_wildcard;
     config.stack_size    = 6144;
-    config.max_uri_handlers = 13;
+    config.max_uri_handlers = 16;
     config.server_port   = 8080;  // kept at 8080 for API compatibility (port 80 now free)
     config.ctrl_port     = 32769; // kept for compatibility
 
@@ -508,6 +603,16 @@ esp_err_t httpserver_start(void)
         .method  = HTTP_POST,
         .handler = rename_post_handler,
     };
+    static const httpd_uri_t time_post = {
+        .uri     = "/time",
+        .method  = HTTP_POST,
+        .handler = time_post_handler,
+    };
+    static const httpd_uri_t files_delete = {
+        .uri     = "/files/*",
+        .method  = HTTP_DELETE,
+        .handler = files_delete_handler,
+    };
 
     httpd_register_uri_handler(server, &status_get);
     httpd_register_uri_handler(server, &config_get);
@@ -515,9 +620,11 @@ esp_err_t httpserver_start(void)
     httpd_register_uri_handler(server, &files_list);
     httpd_register_uri_handler(server, &files_put);
     httpd_register_uri_handler(server, &files_get);
+    httpd_register_uri_handler(server, &files_delete);
     httpd_register_uri_handler(server, &reboot_post);
     httpd_register_uri_handler(server, &update_post);
     httpd_register_uri_handler(server, &rename_post);
+    httpd_register_uri_handler(server, &time_post);
     httpd_register_uri_handler(server, &options_any);
 
     ESP_LOGI(TAG, "HTTP server started on port %d", config.server_port);

@@ -7,11 +7,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "mbedtls/base64.h"
+#include "gpiodefs.h"
+#include "httpserver.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <dirent.h>
+#include <errno.h>
 
 extern void lisyclock_set_rtc_time(struct tm *t);
 
@@ -19,6 +25,13 @@ extern void lisyclock_set_rtc_time(struct tm *t);
 #define USB_COM_BUF_SIZE     256
 #define USB_COM_HANDSHAKE    0x55
 #define HANDSHAKE_TIMEOUT_MS 3000
+
+#define SDCARD_BASE          "/sdcard"
+#define CONFIG_FILE          SDCARD_BASE "/config.txt"
+#define CHUNK_ACK_INTERVAL   8
+#define CHUNK_ACK_TIMEOUT_MS 5000
+#define MAX_LINE_LEN         192
+#define BASE64_LINE_LEN      192
 
 static const char *TAG = "usb_com";
 
@@ -272,6 +285,458 @@ static void handle_time_command(const char *cmd)
     }
 }
 
+// ---------------------------------------------------------------------------
+// Data framing helpers — wait for ACK from receiver
+// ---------------------------------------------------------------------------
+
+static bool usb_wait_for_ack(const char *expected, int timeout_ms)
+{
+    uint8_t buf[64];
+    int idx = 0;
+    TickType_t start = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - start) * portTICK_PERIOD_MS < (unsigned)timeout_ms) {
+        uint8_t b;
+        if (uart_read_bytes(USB_COM_UART, &b, 1, pdMS_TO_TICKS(50)) == 1) {
+            if (b == '\n' || b == '\r') {
+                if (idx > 0) {
+                    buf[idx] = '\0';
+                    if (strcmp((char *)buf, expected) == 0) return true;
+                    idx = 0;
+                }
+            } else if (idx < (int)sizeof(buf) - 1) {
+                buf[idx++] = b;
+            }
+        }
+    }
+    return false;
+}
+
+// Send text data (e.g. config.txt) using DATA:BEGIN/DATA:END framing
+static bool usb_send_text_frame(const char *data, size_t len)
+{
+    char header[48];
+    snprintf(header, sizeof(header), "DATA:BEGIN=%u", (unsigned)len);
+    usb_respond(header);
+
+    int line_count = 0;
+    size_t pos = 0;
+
+    while (pos < len) {
+        // Find next newline or end
+        size_t line_end = pos;
+        while (line_end < len && data[line_end] != '\n') line_end++;
+
+        size_t line_len = line_end - pos;
+
+        // Send line directly — no length limit, no intermediate buffer needed
+        uart_write_bytes(USB_COM_UART, data + pos, line_len);
+        uart_write_bytes(USB_COM_UART, "\r\n", 2);
+        line_count++;
+
+        pos = line_end;
+        if (pos < len && data[pos] == '\n') pos++; // skip newline
+
+        // Flow control: ACK every N lines
+        if (line_count % CHUNK_ACK_INTERVAL == 0) {
+            if (!usb_wait_for_ack("OK:CHUNK_ACK", CHUNK_ACK_TIMEOUT_MS)) {
+                ESP_LOGW(TAG, "Chunk ACK timeout");
+                return false;
+            }
+        }
+    }
+
+    usb_respond("DATA:END");
+    // Wait for final acknowledgement
+    usb_wait_for_ack("OK:DATA_RECEIVED", CHUNK_ACK_TIMEOUT_MS);
+    return true;
+}
+
+// Send binary data using BINDATA:BEGIN/BINDATA:END with base64 encoding
+static bool usb_send_binary_frame(const uint8_t *data, size_t len)
+{
+    char header[48];
+    snprintf(header, sizeof(header), "BINDATA:BEGIN=%u", (unsigned)len);
+    usb_respond(header);
+
+    int line_count = 0;
+    size_t pos = 0;
+    // Each base64 line: 144 raw bytes -> 192 base64 chars
+    const size_t raw_chunk = 144;
+    char b64_buf[256];
+    size_t olen;
+
+    while (pos < len) {
+        size_t chunk = (len - pos > raw_chunk) ? raw_chunk : (len - pos);
+        mbedtls_base64_encode((unsigned char *)b64_buf, sizeof(b64_buf), &olen,
+                              data + pos, chunk);
+        b64_buf[olen] = '\0';
+        usb_respond(b64_buf);
+        line_count++;
+        pos += chunk;
+
+        if (line_count % CHUNK_ACK_INTERVAL == 0) {
+            if (!usb_wait_for_ack("OK:CHUNK_ACK", CHUNK_ACK_TIMEOUT_MS)) {
+                ESP_LOGW(TAG, "Chunk ACK timeout (binary)");
+                return false;
+            }
+        }
+    }
+
+    usb_respond("BINDATA:END");
+    usb_wait_for_ack("OK:BINDATA_RECEIVED", CHUNK_ACK_TIMEOUT_MS);
+    return true;
+}
+
+// Receive text data frame from editor (DATA:BEGIN...DATA:END)
+// Caller must free() returned buffer. Sets *out_len.
+static char *usb_recv_text_frame(size_t *out_len)
+{
+    // First line already consumed should be DATA:BEGIN=<size>
+    // The caller passes remaining lines; here we read from UART directly
+    uint8_t buf[MAX_LINE_LEN + 4];
+    int idx = 0;
+    // Read DATA:BEGIN=<size>
+    // Actually the caller may have already identified this. Let's read lines.
+    // We'll allocate a growing buffer.
+    size_t cap = 4096;
+    char *result = malloc(cap);
+    if (!result) return NULL;
+    size_t total = 0;
+    int line_count = 0;
+
+    while (1) {
+        uint8_t b;
+        if (uart_read_bytes(USB_COM_UART, &b, 1, pdMS_TO_TICKS(10000)) != 1) {
+            free(result);
+            return NULL; // timeout
+        }
+        if (b == '\n' || b == '\r') {
+            if (idx > 0) {
+                buf[idx] = '\0';
+                if (strcmp((char *)buf, "DATA:END") == 0) break;
+                if (strncmp((char *)buf, "DATA:BEGIN=", 11) == 0) {
+                    idx = 0;
+                    continue;
+                }
+
+                // Append line + newline to result
+                size_t line_len = strlen((char *)buf);
+                while (total + line_len + 2 > cap) {
+                    cap *= 2;
+                    char *tmp = realloc(result, cap);
+                    if (!tmp) { free(result); return NULL; }
+                    result = tmp;
+                }
+                memcpy(result + total, buf, line_len);
+                total += line_len;
+                result[total++] = '\n';
+                line_count++;
+
+                if (line_count % CHUNK_ACK_INTERVAL == 0) {
+                    usb_respond("OK:CHUNK_ACK");
+                }
+                idx = 0;
+            }
+        } else if (idx < MAX_LINE_LEN) {
+            buf[idx++] = b;
+        }
+    }
+
+    usb_respond("OK:DATA_RECEIVED");
+    *out_len = total;
+    result[total] = '\0';
+    return result;
+}
+
+// Receive binary data frame from editor (BINDATA:BEGIN...BINDATA:END)
+// Caller must free() returned buffer.
+static uint8_t *usb_recv_binary_frame(size_t *out_len)
+{
+    uint8_t buf[256];
+    int idx = 0;
+    size_t cap = 8192;
+    uint8_t *result = malloc(cap);
+    if (!result) return NULL;
+    size_t total = 0;
+    int line_count = 0;
+
+    while (1) {
+        uint8_t b;
+        if (uart_read_bytes(USB_COM_UART, &b, 1, pdMS_TO_TICKS(10000)) != 1) {
+            free(result);
+            return NULL;
+        }
+        if (b == '\n' || b == '\r') {
+            if (idx > 0) {
+                buf[idx] = '\0';
+                if (strcmp((char *)buf, "BINDATA:END") == 0) break;
+                if (strncmp((char *)buf, "BINDATA:BEGIN=", 14) == 0) {
+                    idx = 0;
+                    continue;
+                }
+
+                // Decode base64
+                size_t olen;
+                uint8_t decoded[256];
+                if (mbedtls_base64_decode(decoded, sizeof(decoded), &olen, buf, idx) != 0) {
+                    free(result);
+                    return NULL;
+                }
+                while (total + olen > cap) {
+                    cap *= 2;
+                    uint8_t *tmp = realloc(result, cap);
+                    if (!tmp) { free(result); return NULL; }
+                    result = tmp;
+                }
+                memcpy(result + total, decoded, olen);
+                total += olen;
+                line_count++;
+
+                if (line_count % CHUNK_ACK_INTERVAL == 0) {
+                    usb_respond("OK:CHUNK_ACK");
+                }
+                idx = 0;
+            }
+        } else if (idx < (int)sizeof(buf) - 1) {
+            buf[idx++] = b;
+        }
+    }
+
+    usb_respond("OK:BINDATA_RECEIVED");
+    *out_len = total;
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// SYS: command handlers
+// ---------------------------------------------------------------------------
+
+static void handle_sys_command(const char *cmd)
+{
+    if (strcmp(cmd, "STATUS") == 0) {
+        char resp[128];
+        snprintf(resp, sizeof(resp), "OK:STATUS=%s,%d",
+                 LISYCLOCK_VERSION, HTTP_API_VERSION);
+        // Trim trailing spaces from version string
+        char *p = resp + 10; // after "OK:STATUS="
+        while (*p && *p != ',') p++;
+        // Backtrack over spaces before comma
+        char *comma = p;
+        while (comma > resp + 10 && *(comma - 1) == ' ') comma--;
+        if (comma != p) {
+            memmove(comma, p, strlen(p) + 1);
+        }
+        usb_respond(resp);
+    }
+    else if (strcmp(cmd, "REBOOT") == 0) {
+        usb_respond("OK:REBOOTING");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        esp_restart();
+    }
+    else {
+        usb_respond("ERR:UNKNOWN_CMD");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CONFIG: command handlers
+// ---------------------------------------------------------------------------
+
+static void handle_config_command(const char *cmd)
+{
+    if (strcmp(cmd, "DOWNLOAD") == 0) {
+        FILE *f = fopen(CONFIG_FILE, "r");
+        if (!f) {
+            usb_respond("ERR:FILE_NOT_FOUND");
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        long fsize = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char *content = malloc(fsize + 1);
+        if (!content) { fclose(f); usb_respond("ERR:OUT_OF_MEMORY"); return; }
+        fread(content, 1, fsize, f);
+        content[fsize] = '\0';
+        fclose(f);
+
+        usb_send_text_frame(content, fsize);
+        free(content);
+    }
+    else if (strcmp(cmd, "UPLOAD") == 0) {
+        size_t len = 0;
+        char *data = usb_recv_text_frame(&len);
+        if (!data) {
+            usb_respond("ERR:CONFIG_SAVE_FAILED");
+            return;
+        }
+        FILE *f = fopen(CONFIG_FILE, "w");
+        if (!f) {
+            free(data);
+            usb_respond("ERR:CONFIG_SAVE_FAILED");
+            return;
+        }
+        fwrite(data, 1, len, f);
+        fclose(f);
+        free(data);
+        usb_respond("OK:CONFIG_SAVED");
+    }
+    else {
+        usb_respond("ERR:UNKNOWN_CMD");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FILE: command handlers
+// ---------------------------------------------------------------------------
+
+// Safety check for filenames (no path traversal)
+static bool is_safe_filename(const char *name)
+{
+    if (!name || name[0] == '\0') return false;
+    if (strchr(name, '/') || strstr(name, "..")) return false;
+    return true;
+}
+
+static void handle_file_command(const char *cmd)
+{
+    if (strcmp(cmd, "LIST") == 0) {
+        DIR *dir = opendir(SDCARD_BASE);
+        if (!dir) {
+            usb_respond("ERR:SD_NOT_AVAILABLE");
+            return;
+        }
+        // Build JSON in memory
+        size_t cap = 2048;
+        char *json = malloc(cap);
+        if (!json) { closedir(dir); usb_respond("ERR:OUT_OF_MEMORY"); return; }
+        strcpy(json, "{\"files\":[");
+        size_t pos = strlen(json);
+        bool first = true;
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_type != DT_REG) continue;
+            char path[264];
+            snprintf(path, sizeof(path), "%s/%s", SDCARD_BASE, entry->d_name);
+            struct stat st;
+            long size = 0, mtime = 0;
+            if (stat(path, &st) == 0) { size = (long)st.st_size; mtime = (long)st.st_mtime; }
+
+            char item[320];
+            int n = snprintf(item, sizeof(item), "%s{\"name\":\"%s\",\"size\":%ld,\"mtime\":%ld}",
+                             first ? "" : ",", entry->d_name, size, mtime);
+            while (pos + n + 4 > cap) {
+                cap *= 2;
+                char *tmp = realloc(json, cap);
+                if (!tmp) { free(json); closedir(dir); usb_respond("ERR:OUT_OF_MEMORY"); return; }
+                json = tmp;
+            }
+            memcpy(json + pos, item, n);
+            pos += n;
+            first = false;
+        }
+        closedir(dir);
+        memcpy(json + pos, "]}", 3);
+        pos += 2;
+
+        usb_send_text_frame(json, pos);
+        free(json);
+    }
+    else if (strncmp(cmd, "RENAME=", 7) == 0) {
+        // Format: FILE:RENAME=<old>,<new>
+        const char *args = cmd + 7;
+        const char *comma = strchr(args, ',');
+        if (!comma) { usb_respond("ERR:RENAME_FAILED"); return; }
+
+        char old_name[64] = {0}, new_name[64] = {0};
+        size_t old_len = comma - args;
+        if (old_len >= sizeof(old_name)) old_len = sizeof(old_name) - 1;
+        memcpy(old_name, args, old_len);
+        strncpy(new_name, comma + 1, sizeof(new_name) - 1);
+
+        if (!is_safe_filename(old_name) || !is_safe_filename(new_name)) {
+            usb_respond("ERR:RENAME_FAILED");
+            return;
+        }
+
+        char old_path[96], new_path[96];
+        snprintf(old_path, sizeof(old_path), "%s/%s", SDCARD_BASE, old_name);
+        snprintf(new_path, sizeof(new_path), "%s/%s", SDCARD_BASE, new_name);
+
+        if (rename(old_path, new_path) == 0) {
+            usb_respond("OK:FILE_RENAMED");
+        } else {
+            usb_respond("ERR:RENAME_FAILED");
+        }
+    }
+    else if (strncmp(cmd, "DELETE=", 7) == 0) {
+        const char *name = cmd + 7;
+        if (!is_safe_filename(name)) {
+            usb_respond("ERR:DELETE_FAILED");
+            return;
+        }
+        char path[96];
+        snprintf(path, sizeof(path), "%s/%s", SDCARD_BASE, name);
+        if (remove(path) == 0) {
+            usb_respond("OK:FILE_DELETED");
+        } else {
+            usb_respond("ERR:DELETE_FAILED");
+        }
+    }
+    else if (strncmp(cmd, "DOWNLOAD=", 9) == 0) {
+        const char *name = cmd + 9;
+        if (!is_safe_filename(name)) {
+            usb_respond("ERR:FILE_NOT_FOUND");
+            return;
+        }
+        char path[96];
+        snprintf(path, sizeof(path), "%s/%s", SDCARD_BASE, name);
+        FILE *f = fopen(path, "rb");
+        if (!f) {
+            usb_respond("ERR:FILE_NOT_FOUND");
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        long fsize = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        uint8_t *content = malloc(fsize);
+        if (!content) { fclose(f); usb_respond("ERR:OUT_OF_MEMORY"); return; }
+        fread(content, 1, fsize, f);
+        fclose(f);
+
+        usb_send_binary_frame(content, fsize);
+        free(content);
+    }
+    else if (strncmp(cmd, "UPLOAD=", 7) == 0) {
+        const char *name = cmd + 7;
+        if (!is_safe_filename(name)) {
+            usb_respond("ERR:FILE_SAVE_FAILED");
+            return;
+        }
+        size_t len = 0;
+        uint8_t *data = usb_recv_binary_frame(&len);
+        if (!data) {
+            usb_respond("ERR:FILE_SAVE_FAILED");
+            return;
+        }
+        char path[96];
+        snprintf(path, sizeof(path), "%s/%s", SDCARD_BASE, name);
+        FILE *f = fopen(path, "wb");
+        if (!f) {
+            free(data);
+            usb_respond("ERR:FILE_SAVE_FAILED");
+            return;
+        }
+        fwrite(data, 1, len, f);
+        fclose(f);
+        free(data);
+        usb_respond("OK:FILE_SAVED");
+    }
+    else {
+        usb_respond("ERR:UNKNOWN_CMD");
+    }
+}
+
 static void usb_com_task(void *arg)
 {
     uint8_t byte;
@@ -301,11 +766,17 @@ static void usb_com_task(void *arg)
             if (byte == '\n' || byte == '\r') {
                 if (idx > 0) {
                     line[idx] = '\0';
-                    // Dispatch: check for WIFI: prefix
+                    // Dispatch: check for command prefix
                     if (strncmp((char *)line, "WIFI:", 5) == 0) {
                         handle_wifi_command((char *)line + 5);
                     } else if (strncmp((char *)line, "TIME:", 5) == 0) {
                         handle_time_command((char *)line + 5);
+                    } else if (strncmp((char *)line, "SYS:", 4) == 0) {
+                        handle_sys_command((char *)line + 4);
+                    } else if (strncmp((char *)line, "CONFIG:", 7) == 0) {
+                        handle_config_command((char *)line + 7);
+                    } else if (strncmp((char *)line, "FILE:", 5) == 0) {
+                        handle_file_command((char *)line + 5);
                     } else {
                         usb_respond("ERR:UNKNOWN_CMD");
                     }
@@ -324,5 +795,5 @@ void usb_com_init(void)
     // Note: CONFIG_ESP_CONSOLE_UART_NONE or CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG may be
     // required in sdkconfig to avoid conflicts with the IDF console driver.
     uart_driver_install(USB_COM_UART, USB_COM_BUF_SIZE * 2, 0, 0, NULL, 0);
-    xTaskCreate(usb_com_task, "usb_com", 8192, NULL, 5, NULL);
+    xTaskCreate(usb_com_task, "usb_com", 12288, NULL, 5, NULL);
 }

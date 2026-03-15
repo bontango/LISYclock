@@ -33,8 +33,8 @@ There are no unit tests in this project.
 
 The hardware version is selected at compile time by commenting/uncommenting `#define LISYCLOCK2` in [main/gpiodefs.h](main/gpiodefs.h):
 
-- **HW v1.xx** (default, `LISYCLOCK2` not defined) — version string `v1.36`
-- **HW v2.xx** (`#define LISYCLOCK2 TRUE`) — version string `v2.36`
+- **HW v1.xx** (default, `LISYCLOCK2` not defined) — version string `v1.43`
+- **HW v2.xx** (`#define LISYCLOCK2 TRUE`) — version string `v2.43`
 
 All GPIO assignments for both versions are in [main/gpiodefs.h](main/gpiodefs.h).
 
@@ -82,10 +82,10 @@ Runtime config is read from `config.txt` on the SD card at boot. Timezone and ot
 
 Der Config Editor befindet sich in `../config_editor/` (relativ zu diesem Verzeichnis).
 
-**API-Vertrag:** [`../API.md`](../API.md) ist die Single Source of Truth für alle HTTP-Endpunkte zwischen Firmware und Editor.
+**API-Vertrag:** [`API.md`](API.md) ist die Single Source of Truth für alle HTTP-Endpunkte zwischen Firmware und Editor. Dies ist die autoritative Kopie; eine gespiegelte Referenzkopie liegt in `../config_editor/API.md`.
 
 **Regeln:**
-- Wenn du einen Endpunkt in `main/httpserver.c` änderst oder hinzufügst, muss `../API.md` aktualisiert werden.
-- Bei **Breaking Changes** (geänderte Response-Felder, entfernte Endpunkte): `HTTP_API_VERSION` in `main/httpserver.h` erhöhen **und** `api_version` in `../API.md` erhöhen.
+- Wenn du einen Endpunkt in `main/httpserver.c` änderst oder hinzufügst, muss `API.md` aktualisiert werden.
+- Bei **Breaking Changes** (geänderte Response-Felder, entfernte Endpunkte): `HTTP_API_VERSION` in `main/httpserver.h` erhöhen **und** `api_version` in `API.md` erhöhen.
 - Nicht-breaking Additions (neue optionale Felder, neue Endpunkte) erfordern keine Versionserhöhung.
-- Nach API-Änderungen muss der Config Editor (`../config_editor/LISYclock_config_editor.html`) angepasst werden.
+- Nach API-Änderungen muss der Config Editor (`../config_editor/LISYclock_config_editor.html`) angepasst werden und `../config_editor/API.md` per `../sync_api.ps1` synchronisiert werden.
